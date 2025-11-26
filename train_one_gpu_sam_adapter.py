@@ -151,7 +151,7 @@ parser.add_argument(
     help="path to training npy files; two subfolders: gts and imgs",
 )
 parser.add_argument("-task_name", type=str, default="MedSAM-ViT-B")
-parser.add_argument("-model_type", type=str, default="vit_b")
+parser.add_argument("-model_type", type=str, default="vit_adapter")
 parser.add_argument(
     "-checkpoint", type=str, default="work_dir/SAM/sam_vit_b_01ec64.pth"
 )
