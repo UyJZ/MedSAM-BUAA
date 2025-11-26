@@ -106,7 +106,15 @@ python utils/ckpt_convert.py # Please set the corresponding checkpoint path firs
 python train_one_gpu.py
 ```
 
+## 开发原则
 
+### dataloader
+
+dataloader统一放在dataloader.py中
+
+### 模型
+
+模型统一放到segment_anything/modeling目录下，类的命名和image_encoder等保持一致，确保ckpt可以正确加载，如果需要改loss，新加一个train_one_gpu.py，模型需要注册到segment_anything/build_sam.py中
 
 ## Acknowledgements
 - We highly appreciate all the challenge organizers and dataset owners for providing the public dataset to the community.
