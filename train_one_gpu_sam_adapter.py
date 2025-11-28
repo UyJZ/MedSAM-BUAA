@@ -16,16 +16,18 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import monai
-from .segment_anything import sam_model_registry
+from segment_anything_med import sam_model_registry
 import torch.nn.functional as F
 import argparse
 import random
 from datetime import datetime
 import shutil
 import glob
+from build_dataloader import build_dataloader
+from metrics import compute_metrics
 
 # set seeds
-torch.manual_seed(2023)
+torch.manual_seed(42)
 torch.cuda.empty_cache()
 
 # torch.distributed.init_process_group(backend="gloo")
@@ -115,31 +117,31 @@ class NpyDataset(Dataset):
 
 
 # %% sanity test of dataset class
-tr_dataset = NpyDataset("data/npy/CT_Abd")
-tr_dataloader = DataLoader(tr_dataset, batch_size=8, shuffle=True)
-for step, (image, gt, bboxes, names_temp) in enumerate(tr_dataloader):
-    print(image.shape, gt.shape, bboxes.shape)
-    # show the example
-    _, axs = plt.subplots(1, 2, figsize=(25, 25))
-    idx = random.randint(0, 7)
-    axs[0].imshow(image[idx].cpu().permute(1, 2, 0).numpy())
-    show_mask(gt[idx].cpu().numpy(), axs[0])
-    show_box(bboxes[idx].numpy(), axs[0])
-    axs[0].axis("off")
-    # set title
-    axs[0].set_title(names_temp[idx])
-    idx = random.randint(0, 7)
-    axs[1].imshow(image[idx].cpu().permute(1, 2, 0).numpy())
-    show_mask(gt[idx].cpu().numpy(), axs[1])
-    show_box(bboxes[idx].numpy(), axs[1])
-    axs[1].axis("off")
-    # set title
-    axs[1].set_title(names_temp[idx])
-    # plt.show()
-    plt.subplots_adjust(wspace=0.01, hspace=0)
-    plt.savefig("./data_sanitycheck.png", bbox_inches="tight", dpi=300)
-    plt.close()
-    break
+# tr_dataset = NpyDataset("data/npy/CT_Abd")
+# tr_dataloader = DataLoader(tr_dataset, batch_size=8, shuffle=True)
+# for step, (image, gt, bboxes, names_temp) in enumerate(tr_dataloader):
+#     print(image.shape, gt.shape, bboxes.shape)
+#     # show the example
+#     _, axs = plt.subplots(1, 2, figsize=(25, 25))
+#     idx = random.randint(0, 7)
+#     axs[0].imshow(image[idx].cpu().permute(1, 2, 0).numpy())
+#     show_mask(gt[idx].cpu().numpy(), axs[0])
+#     show_box(bboxes[idx].numpy(), axs[0])
+#     axs[0].axis("off")
+#     # set title
+#     axs[0].set_title(names_temp[idx])
+#     idx = random.randint(0, 7)
+#     axs[1].imshow(image[idx].cpu().permute(1, 2, 0).numpy())
+#     show_mask(gt[idx].cpu().numpy(), axs[1])
+#     show_box(bboxes[idx].numpy(), axs[1])
+#     axs[1].axis("off")
+#     # set title
+#     axs[1].set_title(names_temp[idx])
+#     # plt.show()
+#     plt.subplots_adjust(wspace=0.01, hspace=0)
+#     plt.savefig("./data_sanitycheck.png", bbox_inches="tight", dpi=300)
+#     plt.close()
+#     break
 
 # %% set up parser
 parser = argparse.ArgumentParser()
@@ -149,6 +151,9 @@ parser.add_argument(
     type=str,
     default="data/npy/CT_Abd",
     help="path to training npy files; two subfolders: gts and imgs",
+)
+parser.add_argument(
+    "-dataset_name", type=str, default="kvasir", help="dataset name"
 )
 parser.add_argument("-task_name", type=str, default="MedSAM-ViT-B")
 parser.add_argument("-model_type", type=str, default="vit_adapter")
@@ -162,7 +167,7 @@ parser.add_argument(
 parser.add_argument("-pretrain_model_path", type=str, default="")
 parser.add_argument("-work_dir", type=str, default="./work_dir")
 # train
-parser.add_argument("-num_epochs", type=int, default=1000)
+parser.add_argument("-num_epochs", type=int, default=10)
 parser.add_argument("-batch_size", type=int, default=2)
 parser.add_argument("-num_workers", type=int, default=0)
 # Optimizer parameters
@@ -250,10 +255,18 @@ class MedSAM(nn.Module):
 
 def main():
     os.makedirs(model_save_path, exist_ok=True)
-    shutil.copyfile(
-        __file__, join(model_save_path, run_id + "_" + os.path.basename(__file__))
+    shutil.copyfile(__file__, join(model_save_path, run_id + "_" + os.path.basename(__file__)))
+
+    # build dataloaders
+    train_loader, val_loader, train_dataset, val_dataset = build_dataloader(
+        dataset_name=args.dataset_name,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        train_ratio=0.9,
+        seed=42,
     )
 
+    # load SAM model
     sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
     medsam_model = MedSAM(
         image_encoder=sam_model.image_encoder,
@@ -262,112 +275,92 @@ def main():
     ).to(device)
     medsam_model.train()
 
-    print(
-        "Number of total parameters: ",
-        sum(p.numel() for p in medsam_model.parameters()),
-    )  # 93735472
-    print(
-        "Number of trainable parameters: ",
-        sum(p.numel() for p in medsam_model.parameters() if p.requires_grad),
-    )  # 93729252
+    # optimizer
+    trainable_params = list(medsam_model.image_encoder.parameters()) + list(medsam_model.mask_decoder.parameters())
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.lr, weight_decay=args.weight_decay)
 
-    img_mask_encdec_params = list(medsam_model.image_encoder.parameters()) + list(
-        medsam_model.mask_decoder.parameters()
-    )
-    optimizer = torch.optim.AdamW(
-        img_mask_encdec_params, lr=args.lr, weight_decay=args.weight_decay
-    )
-    print(
-        "Number of image encoder and mask decoder parameters: ",
-        sum(p.numel() for p in img_mask_encdec_params if p.requires_grad),
-    )  # 93729252
+    # losses
     seg_loss = monai.losses.DiceLoss(sigmoid=True, squared_pred=True, reduction="mean")
-    # cross entropy loss
     ce_loss = nn.BCEWithLogitsLoss(reduction="mean")
-    # %% train
-    num_epochs = args.num_epochs
-    iter_num = 0
-    losses = []
-    best_loss = 1e10
-    train_dataset = NpyDataset(args.tr_npy_path)
 
-    print("Number of training samples: ", len(train_dataset))
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=True,
-    )
+    # AMP
+    scaler = torch.cuda.amp.GradScaler(enabled=args.use_amp)
+
+    best_loss = float("inf")
+    losses = []
 
     start_epoch = 0
-    if args.resume is not None:
-        if os.path.isfile(args.resume):
-            ## Map model to be loaded to specified single GPU
-            checkpoint = torch.load(args.resume, map_location=device)
-            start_epoch = checkpoint["epoch"] + 1
-            medsam_model.load_state_dict(checkpoint["model"])
-            optimizer.load_state_dict(checkpoint["optimizer"])
-    if args.use_amp:
-        scaler = torch.cuda.amp.GradScaler()
+    if args.resume and os.path.isfile(args.resume):
+        checkpoint = torch.load(args.resume, map_location=device)
+        medsam_model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        start_epoch = checkpoint["epoch"] + 1
 
-    for epoch in range(start_epoch, num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
         epoch_loss = 0
-        for step, (image, gt2D, boxes, _) in enumerate(tqdm(train_dataloader)):
+        medsam_model.train()
+        for step, (images, gt2D, boxes, _) in enumerate(tqdm(train_loader)):
+            images, gt2D = images.to(device), gt2D.to(device)
             optimizer.zero_grad()
-            boxes_np = boxes.detach().cpu().numpy()
-            image, gt2D = image.to(device), gt2D.to(device)
-            if args.use_amp:
-                ## AMP
-                with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    medsam_pred = medsam_model(image, boxes_np)
-                    loss = seg_loss(medsam_pred, gt2D) + ce_loss(
-                        medsam_pred, gt2D.float()
-                    )
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad()
-            else:
-                medsam_pred = medsam_model(image, boxes_np)
-                loss = seg_loss(medsam_pred, gt2D) + ce_loss(medsam_pred, gt2D.float())
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
+
+            with torch.cuda.amp.autocast(enabled=args.use_amp):
+                preds = medsam_model(images, boxes.to('cpu').numpy())
+                loss = seg_loss(preds, gt2D) + ce_loss(preds, gt2D.float())
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
             epoch_loss += loss.item()
-            iter_num += 1
 
-        epoch_loss /= step
+        epoch_loss /= len(train_loader)
         losses.append(epoch_loss)
-        if args.use_wandb:
-            wandb.log({"epoch_loss": epoch_loss})
-        print(
-            f'Time: {datetime.now().strftime("%Y%m%d-%H%M")}, Epoch: {epoch}, Loss: {epoch_loss}'
-        )
-        ## save the latest model
+
+        # validation
+        medsam_model.eval()
+        val_loss = 0
+        all_iou, all_dice, all_acc = [], [], []
+
+        with torch.no_grad():
+            for images, gt2D, boxes, _ in val_loader:
+                images, gt2D = images.to(device), gt2D.to(device)
+                preds = medsam_model(images, boxes.to('cpu').numpy())
+                loss = seg_loss(preds, gt2D) + ce_loss(preds, gt2D.float())
+                val_loss += loss.item()
+
+                # compute metrics
+                iou, dice, acc = compute_metrics(preds, gt2D)
+                all_iou.append(iou)
+                all_dice.append(dice)
+                all_acc.append(acc)
+
+        val_loss /= len(val_loader)
+        mean_iou = np.mean(all_iou)
+        mean_dice = np.mean(all_dice)
+        mean_acc = np.mean(all_acc)
+
+        print(f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Val Loss: {val_loss:.4f} | "
+            f"Val mIoU: {mean_iou:.4f} | Val Dice: {mean_dice:.4f} | Val Acc: {mean_acc:.4f}")
+
+
+        # save checkpoints
         checkpoint = {
             "model": medsam_model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "epoch": epoch,
         }
         torch.save(checkpoint, join(model_save_path, "medsam_model_latest.pth"))
-        ## save the best model
-        if epoch_loss < best_loss:
-            best_loss = epoch_loss
-            checkpoint = {
-                "model": medsam_model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "epoch": epoch,
-            }
+        if val_loss < best_loss:
+            best_loss = val_loss
             torch.save(checkpoint, join(model_save_path, "medsam_model_best.pth"))
 
-        # %% plot loss
-        plt.plot(losses)
-        plt.title("Dice + Cross Entropy Loss")
+        # plot loss
+        plt.figure()
+        plt.plot(losses, label="Train Loss")
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
-        plt.savefig(join(model_save_path, args.task_name + "train_loss.png"))
+        plt.legend()
+        plt.savefig(join(model_save_path, f"{args.task_name}_train_loss.png"))
         plt.close()
 
 

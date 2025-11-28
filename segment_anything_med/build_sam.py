@@ -236,7 +236,7 @@ def _build_sam_adapter(
     if checkpoint is not None:
         with open(checkpoint, "rb") as f:
             state_dict = torch.load(f, map_location=torch.device('cpu'))
-        sam.load_state_dict(state_dict)
+        sam.load_state_dict(state_dict, strict=False)
     return sam
 
 
