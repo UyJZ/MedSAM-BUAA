@@ -1,0 +1,11 @@
+python train_one_gpu_sam_adapter.py \
+    -dataset_name kvasir \
+    -task_name MedSAM-Adapter \
+    -model_type vit_adapter \
+    -checkpoint work_dir/SAM/sam_vit_b_01ec64.pth \
+    -work_dir ./work_dir \
+    -num_epochs 10 \
+    -batch_size 2 \
+    -lr 0.0001 \
+    -use_wandb False \
+    --device cuda:0 > train_sam_adapter_kvasir.log 2>&1 &
