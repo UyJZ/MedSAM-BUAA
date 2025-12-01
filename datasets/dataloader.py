@@ -188,6 +188,72 @@ class BraTSDataset(Dataset):
         )
         
 
+class ISICDataset(Dataset):
+    """
+    使用官方 ISIC 2018 Task1 的训练集、验证集，而不是随机划分。
+    """
+
+    def __init__(self, root_dir, split='train', target_size=512):
+        self.target_size = target_size
+
+        if split == "train":
+            img_dir = os.path.join(root_dir, "ISIC2018_Task1-2_Training_Input")
+            mask_dir = os.path.join(root_dir, "ISIC2018_Task1_Training_GroundTruth")
+        elif split == "val":
+            img_dir = os.path.join(root_dir, "ISIC2018_Task1_Validation_Input")
+            mask_dir = os.path.join(root_dir, "ISIC2018_Task1_Validation_GroundTruth")
+        else:
+            raise ValueError("split 必须是 'train' 或 'val'")
+
+        self.img_dir = img_dir
+        self.mask_dir = mask_dir
+
+        # 获取所有图片
+        self.images = sorted([
+            f for f in os.listdir(img_dir)
+            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
+        ])
+
+    def __len__(self):
+        return len(self.images)
+
+    def preprocess(self, img, is_mask=False):
+        if is_mask:
+            return cv2.resize(img, (self.target_size, self.target_size),
+                              interpolation=cv2.INTER_NEAREST)
+        else:
+            img = cv2.resize(img, (self.target_size, self.target_size),
+                             interpolation=cv2.INTER_LINEAR)
+            return (img - img.min()) / np.clip(img.max() - img.min(), 1e-8, None)
+
+    def __getitem__(self, idx):
+        name = self.images[idx]
+
+        img_path = os.path.join(self.img_dir, name)
+        mask_name = name.replace(".jpg", "_segmentation.png") \
+                        .replace(".JPG", "_segmentation.png") \
+                        .replace(".png", "_segmentation.png")
+
+        mask_path = os.path.join(self.mask_dir, mask_name)
+
+        img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
+        mask = (mask > 127).astype(np.uint8)
+
+        img_resized = self.preprocess(img, is_mask=False)
+        mask_resized = self.preprocess(mask, is_mask=True)
+
+        bbox = get_bbox_from_mask(mask_resized, self.target_size)
+
+        return (
+            torch.tensor(img_resized).permute(2, 0, 1).float(),
+            torch.tensor(mask_resized).unsqueeze(0).float(),
+            torch.tensor(bbox).float(),
+            name
+        )
+        
+
 # --- 测试 ---
 if __name__ == "__main__":
     dataset_root = "./datasets/Kvasir-SEG"  # 你的数据集路径
