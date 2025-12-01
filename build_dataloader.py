@@ -1,6 +1,6 @@
 import os
 from torch.utils.data import DataLoader
-from datasets.dataloader import KVASIRDataset
+from datasets.dataloader import KVASIRDataset, BraTSDataset, ISICDataset
 # from datasets.medsam_dataset import MedSAMDataset2D
 
 # 数据集根目录映射
@@ -33,6 +33,12 @@ def build_dataloader(dataset_name, batch_size=2, num_workers=4, train_ratio=0.8,
     if dataset_name == 'kvasir':
         train_dataset = KVASIRDataset(root_dir=root_dir, split='train', train_ratio=train_ratio, seed=seed)
         test_dataset  = KVASIRDataset(root_dir=root_dir, split='val',   train_ratio=train_ratio, seed=seed)
+    elif dataset_name == "brats":
+        train_dataset = BraTSDataset(root_dir=root_dir, split='train', train_ratio=train_ratio, seed=seed)
+        test_dataset  = BraTSDataset(root_dir=root_dir, split='val',   train_ratio=train_ratio, seed=seed)
+    elif dataset_name == "isic":
+        train_dataset = ISICDataset(root_dir=root_dir, split='train', seed=seed)
+        test_dataset  = ISICDataset(root_dir=root_dir, split='val',   seed=seed)
     # elif dataset_name == 'medsam':
     #     train_dataset = MedSAMDataset2D(root_dir=root_dir, split='train', train_ratio=train_ratio, seed=seed)
     #     test_dataset  = MedSAMDataset2D(root_dir=root_dir, split='val',   train_ratio=train_ratio, seed=seed)
