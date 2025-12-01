@@ -1,6 +1,6 @@
 import os
 from torch.utils.data import DataLoader
-from datasets.dataloader_kvasir import KVASIRDataset
+from datasets.dataloader import KVASIRDataset
 # from datasets.medsam_dataset import MedSAMDataset2D
 
 # 数据集根目录映射
