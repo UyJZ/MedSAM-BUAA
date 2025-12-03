@@ -191,29 +191,38 @@ class BraTSDataset(Dataset):
 
 class ISICDataset(Dataset):
     """
-    使用官方 ISIC 2018 Task1 的训练集、验证集，而不是随机划分。
+    使用 ISIC 2018 官方训练集（唯一有 mask 的部分），
+    并在本地自行划分 train/val。
     """
 
-    def __init__(self, root_dir, split='train', target_size=512):
+    def __init__(self, root_dir, split='train', target_size=512,
+                 train_ratio=0.8, seed=42):
         self.target_size = target_size
 
-        if split == "train":
-            img_dir = os.path.join(root_dir, "ISIC2018_Task1-2_Training_Input")
-            mask_dir = os.path.join(root_dir, "ISIC2018_Task1_Training_GroundTruth")
-        elif split == "val":
-            img_dir = os.path.join(root_dir, "ISIC2018_Task1_Validation_Input")
-            mask_dir = os.path.join(root_dir, "ISIC2018_Task1_Validation_GroundTruth")
-        else:
-            raise ValueError("split 必须是 'train' 或 'val'")
+        img_dir = os.path.join(root_dir, "ISIC2018_Task1-2_Training_Input")
+        mask_dir = os.path.join(root_dir, "ISIC2018_Task1_Training_GroundTruth")
+
+        assert os.path.exists(img_dir), f"{img_dir} 不存在"
+        assert os.path.exists(mask_dir), f"{mask_dir} 不存在"
 
         self.img_dir = img_dir
         self.mask_dir = mask_dir
 
-        # 获取所有图片
-        self.images = sorted([
+        all_images = sorted([
             f for f in os.listdir(img_dir)
-            if f.lower().endswith(('.jpg', '.png', '.jpeg'))
+            if f.lower().endswith(('.jpg', '.png'))
         ])
+        
+        np.random.seed(seed)
+        np.random.shuffle(all_images)
+        split_idx = int(len(all_images) * train_ratio)
+
+        if split == "train":
+            self.images = all_images[:split_idx]
+        elif split == "val":
+            self.images = all_images[split_idx:]
+        else:
+            raise ValueError("split 必须是 train 或 val")
 
     def __len__(self):
         return len(self.images)
@@ -231,12 +240,15 @@ class ISICDataset(Dataset):
         name = self.images[idx]
 
         img_path = os.path.join(self.img_dir, name)
+
+        # mask 文件名格式：xxx_segmentation.png
         mask_name = name.replace(".jpg", "_segmentation.png") \
                         .replace(".JPG", "_segmentation.png") \
                         .replace(".png", "_segmentation.png")
 
         mask_path = os.path.join(self.mask_dir, mask_name)
 
+        # Load image & mask
         img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
 
