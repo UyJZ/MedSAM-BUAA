@@ -72,6 +72,8 @@ class GlaSDataset(Dataset):
             self.images = self.images[:split_idx]  # 前 80%
         elif split == 'val':
             self.images = self.images[split_idx:]  # 后 20%
+        elif split == "all":
+            self.images = self.images
         else:
             raise ValueError("split must be 'train' or 'val'")
 
@@ -106,7 +108,7 @@ class GlaSDataset(Dataset):
             raise ValueError(f"找不到对应的Mask文件: {mask_path}")
 
         # 2. 二值化
-        mask = (mask > 127).astype(np.uint8)
+        mask = (mask > 0).astype(np.uint8)
 
         # 3. 预处理
         img_resized = self.preprocess(img, is_mask=False)
@@ -165,6 +167,8 @@ class BUSIDataset(Dataset):
             self.images = self.images[:split_idx]
         elif split == 'val':
             self.images = self.images[split_idx:]
+        elif split == "all":
+            self.images = self.images
         else:
             raise ValueError("split must be 'train' or 'val'")
 
@@ -188,6 +192,7 @@ class BUSIDataset(Dataset):
         # --- 自动找对应的 Mask ---
         # BUSI 规则: abc.png -> abc_mask.png
         # 因为 Mask 和原图在同一文件夹，直接替换路径字符串即可
+
         mask_path = img_path.replace(".png", "_mask.png")
 
         # 1. 读取
@@ -198,9 +203,24 @@ class BUSIDataset(Dataset):
 
         mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
         if mask is None:
-            # 简单容错：如果找不到 mask，返回全黑图（避免程序崩溃）
-            # print(f"警告：找不到 Mask {mask_path}")
-            mask = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
+            raise ValueError(f"无法读取图片: {mask_path}")
+        i = 1
+        while True:
+            mask_path = img_path.replace(".png", "_mask_" + str(i) + ".png")
+            if (not os.path.exists(mask_path)):
+                break
+            # 1. 读取
+            print(mask_path)
+            mask2 = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+            if mask2 is None:
+                raise ValueError(f"无法读取图片: {mask_path}")
+            mask = (mask | mask2).astype(np.uint8)
+            i += 1
+
+        # if mask is None:
+        #     # 简单容错：如果找不到 mask，返回全黑图（避免程序崩溃）
+        #     # print(f"警告：找不到 Mask {mask_path}")
+        #     mask = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint8)
 
         # 2. 二值化
         mask = (mask > 127).astype(np.uint8)
@@ -460,21 +480,55 @@ class ISICDataset(Dataset):
 
 # --- 测试 ---
 if __name__ == "__main__":
+    # 1. 读取
+
+    # mask = cv2.imread("/Users/shizixuan/Desktop/研一上/医学影像处理/project/Dataset_BUSI/benign/benign (1)_mask.png", cv2.IMREAD_GRAYSCALE)
+    # # if mask is None:
+    # #     raise ValueError(f"找不到对应的Mask文件: {mask_path}")
+    # print(mask.any())
+    # 2. 二值化
+    # mask = (mask > 0).astype(np.uint8)
+    # print(mask)
+    # # 3. 预处理
+    # img_resized = self.preprocess(img, is_mask=False)
+    # mask_resized = self.preprocess(mask, is_mask=True)
+    # mask_resized = mask_resized.astype(np.float32)
+
+    # # 4. Prompt
+    # bbox = get_bbox_from_mask(mask_resized, self.target_size)
+    #
+    # return (
+    #     torch.tensor(img_resized).permute(2, 0, 1).float(),
+    #     torch.tensor(mask_resized).unsqueeze(0).float(),
+    #     torch.tensor(bbox).float(),
+    #     img_name
+    # )
+
     dataset_root = "./datasets/Kvasir-SEG"  # 你的数据集路径
-    train_dataset = BraTSDataset("D:/Download/archive", split='train')
-    val_dataset = BraTSDataset("D:/Download/archive", split='val')
+    # train_dataset = GlaSDataset("/Users/shizixuan/Desktop/研一上/医学影像处理/project/Glas_Dataset", split="all")
+    train_dataset = BUSIDataset("/Users/shizixuan/Desktop/研一上/医学影像处理/project/Dataset_BUSI", split='all')
+    # val_dataset = BraTSDataset("D:/Download/archive", split='val')
     # train_dataset = KVASIRDataset(dataset_root, split='train')
     # val_dataset = KVASIRDataset(dataset_root, split='val')
 
     train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
+    # val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
 
-    print(f"Train size: {len(train_dataset)}, Val size: {len(val_dataset)}")
+    # print(f"Train size: {len(train_dataset)}, Val size: {len(val_dataset)}")
 
+    sum = 0
     for batch in train_loader:
+
         image, mask, bbox, name = batch
-        print(image.shape, mask.shape, bbox.shape)
-        cv2.imshow("Image", image[0].permute(1, 2, 0).numpy())
-        cv2.imshow("Mask", mask[0][0].numpy() * 255)
-        cv2.waitKey(0)
-        break
+        #
+        # if not mask.any():
+        #     sum += 1
+        #     print("Mask 是全黑的 (全0)," + str(name))
+        # # if not image.any():
+        # #     sum += 1
+        # #     print("image 是全黑的 (全0)," + str(name))
+        # # else:
+        # #     print("image 里有目标")
+
+    # print(train_dataset.__len__())
+    # print(sum)
