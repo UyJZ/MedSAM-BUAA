@@ -1,1 +1,1 @@
-from .dataloader import KvasirDataset, KvasirDataModule
+from .dataloader import KVASIRDataset, BraTSDataset, BUSIDataset, ISICDataset, GlaSDataset

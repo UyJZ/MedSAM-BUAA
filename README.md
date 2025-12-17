@@ -105,6 +105,21 @@ python utils/ckpt_convert.py # Please set the corresponding checkpoint path firs
 ```bash
 python train_one_gpu.py
 ```
+### Combined parameter-efficient variants
+
+Set the `-model_type` argument on any training script to pick one of the new hybrids:
+
+- `vit_lora_prompt`: LoRA-tuned attention with deep prompt residuals.
+- `vit_adapter_lora`: Adapter backbone with frozen ViT blocks plus LoRA heads.
+- `vit_adapter_prompt`: Adapter backbone augmented with prompt tuning.
+- `vit_adapter_lora_prompt`: Stacks adapter prompts and LoRA on the same model.
+
+Example:
+
+```bash
+python train_one_gpu_sam_adapter.py -dataset_name busi -model_type vit_adapter_lora_prompt
+```
+
 
 ## 开发原则
 

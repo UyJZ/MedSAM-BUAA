@@ -7,7 +7,10 @@
 from functools import partial
 from pathlib import Path
 import urllib.request
+
+import numpy as np
 import torch
+import torch.nn as nn
 
 from .modeling import (
     ImageEncoderViT,
@@ -16,6 +19,8 @@ from .modeling import (
     Sam,
     TwoWayTransformer,
 )
+from .modeling.sam_lora import LoRA_qkv
+from .modeling.sam_prompt import Prompt_Block
 
 
 def build_sam_vit_h(checkpoint=None):
@@ -432,6 +437,39 @@ def _build_sam_prompt(
     return sam
 
 
+
+
+def build_sam_lora_prompt_vit_b(checkpoint=None):
+    sam = build_sam_lora_vit_b(checkpoint=checkpoint)
+    _wrap_with_prompt_blocks(sam.image_encoder)
+    return sam
+
+
+def build_sam_adapter_lora_vit_b(checkpoint=None):
+    sam = build_sam_adapter_vit_b(checkpoint=checkpoint)
+    sam.freeze()
+    _freeze_module_parameters(sam.mask_decoder)
+    _inject_lora_layers(sam.image_encoder)
+    return sam
+
+
+def build_sam_adapter_prompt_vit_b(checkpoint=None):
+    sam = build_sam_adapter_vit_b(checkpoint=checkpoint)
+    sam.freeze()
+    _freeze_module_parameters(sam.mask_decoder)
+    _wrap_with_prompt_blocks(sam.image_encoder)
+    return sam
+
+
+def build_sam_adapter_lora_prompt_vit_b(checkpoint=None):
+    sam = build_sam_adapter_vit_b(checkpoint=checkpoint)
+    sam.freeze()
+    _freeze_module_parameters(sam.mask_decoder)
+    _inject_lora_layers(sam.image_encoder)
+    _wrap_with_prompt_blocks(sam.image_encoder)
+    return sam
+
+
 sam_model_registry = {
     "default": build_sam_vit_h,
     "vit_h": build_sam_vit_h,
@@ -440,4 +478,46 @@ sam_model_registry = {
     "vit_adapter": build_sam_adapter_vit_b,
     "vit_lora": build_sam_lora_vit_b,
     "vit_prompt": build_sam_prompt_vit_b,
+    "vit_lora_prompt": build_sam_lora_prompt_vit_b,
+    "vit_adapter_lora": build_sam_adapter_lora_vit_b,
+    "vit_adapter_prompt": build_sam_adapter_prompt_vit_b,
+    "vit_adapter_lora_prompt": build_sam_adapter_lora_prompt_vit_b,
 }
+
+def _freeze_module_parameters(module: nn.Module) -> None:
+    for param in module.parameters():
+        param.requires_grad = False
+
+
+def _inject_lora_layers(image_encoder: nn.Module, lora_layers=None, rank: int = 512) -> None:
+    if lora_layers is None:
+        lora_layers = list(range(len(image_encoder.blocks)))
+    for idx, block in enumerate(image_encoder.blocks):
+        if idx not in lora_layers:
+            continue
+        qkv_linear = block.attn.qkv
+        d_model = qkv_linear.in_features
+        w_a_q = nn.Linear(d_model, rank, bias=False)
+        w_b_q = nn.Linear(rank, d_model, bias=False)
+        w_a_v = nn.Linear(d_model, rank, bias=False)
+        w_b_v = nn.Linear(rank, d_model, bias=False)
+        nn.init.kaiming_uniform_(w_a_q.weight, a=np.sqrt(5))
+        nn.init.kaiming_uniform_(w_a_v.weight, a=np.sqrt(5))
+        nn.init.zeros_(w_b_q.weight)
+        nn.init.zeros_(w_b_v.weight)
+        block.attn.qkv = LoRA_qkv(qkv_linear, w_a_q, w_b_q, w_a_v, w_b_v)
+
+
+def _wrap_with_prompt_blocks(image_encoder: nn.Module, prompt_layers=None) -> None:
+    if prompt_layers is None:
+        prompt_layers = list(range(len(image_encoder.blocks)))
+    img_size = image_encoder.img_size
+    patch_size = image_encoder.patch_embed.proj.kernel_size[0]
+    grid_size = img_size // patch_size
+    embed_dim = image_encoder.patch_embed.proj.out_channels
+    for idx in prompt_layers:
+        base_block = image_encoder.blocks[idx]
+        prompt_param = nn.Parameter(torch.zeros(1, grid_size, grid_size, embed_dim))
+        nn.init.xavier_uniform_(prompt_param)
+        image_encoder.blocks[idx] = Prompt_Block(base_block, prompt_param)
+
