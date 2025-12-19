@@ -185,7 +185,23 @@ parser.add_argument(
     "--resume", type=str, default="", help="Resuming training from checkpoint"
 )
 parser.add_argument("--device", type=str, default="cuda:0")
+parser.add_argument(
+    "--train_ratio",
+    type=float,
+    default=0.9,
+    help="portion of the dataset used for training (0, 1)",
+)
+parser.add_argument(
+    "--run_tag",
+    type=str,
+    default="",
+    help="optional identifier to override the timestamp-based run folder suffix",
+)
 args = parser.parse_args()
+
+if not 0.0 < args.train_ratio < 1.0:
+    raise ValueError("--train_ratio must be between 0 and 1 (exclusive)")
+
 
 if args.use_wandb:
     import wandb
@@ -203,7 +219,8 @@ if args.use_wandb:
 
 # %% set up model for training
 # device = args.device
-run_id = datetime.now().strftime("%Y%m%d-%H%M")
+_run_tag = args.run_tag.strip().replace(" ", "_")
+run_id = _run_tag if _run_tag else datetime.now().strftime("%Y%m%d-%H%M")
 model_save_path = join(args.work_dir, args.task_name, args.model_type + "-" + run_id)
 device = torch.device(args.device)
 # %% set up model
@@ -257,13 +274,21 @@ def main():
     os.makedirs(model_save_path, exist_ok=True)
     shutil.copyfile(__file__, join(model_save_path, run_id + "_" + os.path.basename(__file__)))
 
-    # build dataloaders
+    print(
+        f"[MedSAM] dataset={args.dataset_name} model={args.model_type} "
+        f"train_ratio={args.train_ratio:.2f} epochs={args.num_epochs} run_id={run_id}"
+    )
+
     train_loader, val_loader, train_dataset, val_dataset = build_dataloader(
         dataset_name=args.dataset_name,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        train_ratio=0.9,
+        train_ratio=args.train_ratio,
         seed=42,
+    )
+
+    print(
+        f"[MedSAM] train samples={len(train_dataset)} val samples={len(val_dataset)}"
     )
 
     # load SAM model

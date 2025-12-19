@@ -1,3 +1,6 @@
 *.zip
 Warwick_QU_Dataset/
 Dataset_BUSI_with_GT/
+*.tar
+BraTS2021/
+ISIC2018/
