@@ -437,8 +437,6 @@ def _build_sam_prompt(
     return sam
 
 
-
-
 def build_sam_lora_prompt_vit_b(checkpoint=None):
     sam = build_sam_lora_vit_b(checkpoint=checkpoint)
     _wrap_with_prompt_blocks(sam.image_encoder)
@@ -518,6 +516,5 @@ def _wrap_with_prompt_blocks(image_encoder: nn.Module, prompt_layers=None) -> No
     for idx in prompt_layers:
         base_block = image_encoder.blocks[idx]
         prompt_param = nn.Parameter(torch.zeros(1, grid_size, grid_size, embed_dim))
-        nn.init.xavier_uniform_(prompt_param)
+        nn.init.normal_(prompt_param, std=0.02)
         image_encoder.blocks[idx] = Prompt_Block(base_block, prompt_param)
-

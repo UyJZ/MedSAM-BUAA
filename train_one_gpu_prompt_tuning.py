@@ -90,8 +90,8 @@ parser.add_argument(
 parser.add_argument(
     "-dataset_name", type=str, default="kvasir", help="dataset name"
 )
-parser.add_argument("-task_name", type=str, default="MedSAM-Prompt")
-parser.add_argument("-model_type", type=str, default="vit_prompt")
+parser.add_argument("-task_name", type=str, default="MedSAM-Prompt-Tuning")
+parser.add_argument("-model_type", type=str, default="vit_prompt_tuning")
 parser.add_argument(
     "-checkpoint", type=str, default="work_dir/SAM/sam_vit_b_01ec64.pth"
 )
@@ -113,7 +113,7 @@ parser.add_argument(
     "-weight_decay", type=float, default=0.01, help="weight decay (default: 0.01)"
 )
 parser.add_argument(
-    "-lr", type=float, default=0.0001, metavar="LR", help="learning rate (absolute lr)"
+    "-lr", type=float, default=0.05, metavar="LR", help="learning rate (absolute lr)"
 )
 parser.add_argument(
     "-use_wandb", action="store_true", help="use wandb to monitor training"
@@ -219,16 +219,16 @@ def main():
     ).to(device)
     medsam_model.train()
 
-    # for param in medsam_model.mask_decoder.parameters():
+    # for param in medsam_model.image_encoder.parameters():
     #         param.requires_grad = False
-    # if hasattr(medsam_model.image_encoder, "freeze_image_encoder_except_prompts"):
-    #     medsam_model.image_encoder.freeze_image_encoder_except_prompts()
+    # if hasattr(medsam_model.mask_decoder, "freeze_mask_decoder_except_soft_prompts"):
+    #     medsam_model.mask_decoder.freeze_mask_decoder_except_soft_prompts()
 
     # optimizer
     trainable_params = [p for p in medsam_model.parameters() if p.requires_grad]
 
     print(f"Number of trainable parameters: {sum(p.numel() for p in trainable_params)}")
-
+    
     optimizer = torch.optim.AdamW(trainable_params, lr=args.lr, weight_decay=args.weight_decay)
 
     # losses

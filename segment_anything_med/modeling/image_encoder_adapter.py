@@ -16,10 +16,11 @@ import warnings
 from itertools import repeat
 TORCH_MAJOR = int(torch.__version__.split('.')[0])
 TORCH_MINOR = int(torch.__version__.split('.')[1])
-if TORCH_MAJOR == 1 and TORCH_MINOR < 8:
-    from torch._six import container_abcs
-else:
-    import collections.abc as container_abcs
+# if TORCH_MAJOR == 1 and TORCH_MINOR < 8:
+#     from torch._six import container_abcs
+# else:
+#     import collections.abc as container_abcs
+import collections.abc as container_abcs
 
 # This class and its supporting functions below lightly adapted from the ViTDet backbone available at: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/backbone/vit.py # noqa
 class ImageEncoderViT(nn.Module):
@@ -165,7 +166,7 @@ def to_2tuple(x):
     return tuple(repeat(x, 2))
 
 def trunc_normal_(tensor, mean=0., std=1., a=-2., b=2.):
-    # type: (Tensor, float, float, float, float) -> Tensor
+    # type: (torch.Tensor, float, float, float, float) -> torch.Tensor
     r"""Fills the input Tensor with values drawn from a truncated
     normal distribution. The values are effectively drawn from the
     normal distribution :math:`\mathcal{N}(\text{mean}, \text{std}^2)`

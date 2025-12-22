@@ -7,29 +7,13 @@
 
 import torch
 from torch import nn
-from torch import Tensor
 from torch.nn import functional as F
 
 from typing import Any, Dict, List, Tuple
 
 from .image_encoder import ImageEncoderViT
-from .mask_decoder import MaskDecoder
+from .mask_decoder_prompt_tuning import MaskDecoder
 from .prompt_encoder import PromptEncoder
-
-
-class Prompt_Block(nn.Module):
-    """
-    Prompt Tuning Block that adds a learnable prompt to the input of the transformer block.
-    """
-    def __init__(self, block: nn.Module, prompt_param: nn.Parameter):
-        super(Prompt_Block, self).__init__()
-        self.block = block
-        self.prompt_param = prompt_param
-
-    def forward(self, x: Tensor):
-        # x: (B, H, W, C)
-        # prompt_param: (1, H, W, C)
-        return self.block(x + self.prompt_param)
 
 
 class Sam(nn.Module):
@@ -43,7 +27,6 @@ class Sam(nn.Module):
         mask_decoder: MaskDecoder,
         pixel_mean: List[float] = [123.675, 116.28, 103.53],
         pixel_std: List[float] = [58.395, 57.12, 57.375],
-        prompt_layer: List[int] = None,
     ) -> None:
         """
         SAM predicts object masks from an image and input prompts.
@@ -56,7 +39,6 @@ class Sam(nn.Module):
             and encoded prompts.
           pixel_mean (list(float)): Mean values for normalizing pixels in the input image.
           pixel_std (list(float)): Std values for normalizing pixels in the input image.
-          prompt_layer (list(int)): List of block indices to apply prompt tuning.
         """
         super().__init__()
         self.image_encoder = image_encoder
@@ -65,38 +47,7 @@ class Sam(nn.Module):
         self.register_buffer(
             "pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False
         )
-        self.register_buffer("pixel_std", torch.Tensor(
-            pixel_std).view(-1, 1, 1), False)
-
-        # Setup Prompt Tuning
-        if prompt_layer is None:
-            self.prompt_layer = list(range(len(self.image_encoder.blocks)))
-        else:
-            self.prompt_layer = prompt_layer
-
-        # Calculate grid size for spatial prompts
-        img_size = self.image_encoder.img_size
-        patch_size = self.image_encoder.patch_embed.proj.kernel_size[0]
-        grid_size = img_size // patch_size
-        embed_dim = self.image_encoder.patch_embed.proj.out_channels
-
-        for i, block in enumerate(self.image_encoder.blocks):
-            if i not in self.prompt_layer:
-                continue
-
-            # Initialize learnable prompt parameter
-            prompt_param = nn.Parameter(torch.zeros(1, grid_size, grid_size, embed_dim))
-
-            # Initialize to zeros
-            nn.init.normal_(prompt_param, std=0.02)
-
-            # Wrap the block
-            self.image_encoder.blocks[i] = Prompt_Block(block, prompt_param)
-
-    def freeze_image_encoder_except_prompts(self):
-        for name, param in self.image_encoder.named_parameters():
-            if "prompt_param" not in name:
-                param.requires_grad = False
+        self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
 
     @property
     def device(self) -> Any:

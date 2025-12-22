@@ -16,13 +16,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import monai
-from segment_anything import sam_model_registry
+from segment_anything_med import sam_model_registry
 import torch.nn.functional as F
 import argparse
 import random
 from datetime import datetime
 import shutil
-from torch import Tensor
 import glob
 
 # set seeds
